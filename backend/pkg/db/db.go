@@ -1,9 +1,10 @@
 package db
 
 import (
+	"github.com/whyxn/easynas/backend/pkg/db/model"
+	"github.com/whyxn/easynas/backend/pkg/log"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"log"
 )
 
 // Database struct to hold the connection instance
@@ -11,19 +12,49 @@ type Database struct {
 	client *gorm.DB
 }
 
+var db = Database{}
+
 // Connect initializes a connection to the SQLite database
-func Connect(dbPath string) (*Database, error) {
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+func Connect(dbPath string) error {
+	var err error
+	db.client, err = gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	log.Println("Database connection established.")
-	return &Database{client: db}, nil
+	log.Logger.Info("Database connection established")
+	return nil
+}
+
+func GetDb() *Database {
+	return &db
 }
 
 // Client returns the current database client
 func (db *Database) Client() *gorm.DB {
 	return db.client
+}
+
+func (db *Database) RunMigrations() error {
+	log.Logger.Info("Running Database Migrations...")
+
+	var err error
+	// Auto-migrate the ExampleModel
+	err = db.Client().AutoMigrate(&model.User{})
+	if err != nil {
+		return err
+	}
+
+	err = db.Client().AutoMigrate(&model.NfsShare{})
+	if err != nil {
+		return err
+	}
+
+	err = db.Client().AutoMigrate(&model.NfsSharePermission{})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Insert inserts a record into the specified table
