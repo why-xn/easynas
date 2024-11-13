@@ -33,18 +33,34 @@ func (db *Database) Insert(record interface{}) error {
 }
 
 // Get retrieves a single record based on the given conditions and returns it as an object of the specified type
-func Get[T any](db *Database, conditions map[string]interface{}) (*T, error) {
+func Get[T any](db *Database, conditions map[string]interface{}, preloads ...string) (*T, error) {
 	var result T
-	if err := db.client.Where(conditions).First(&result).Error; err != nil {
+	var tx = db.client
+
+	if len(preloads) > 0 {
+		for _, preload := range preloads {
+			tx = tx.Preload(preload)
+		}
+	}
+
+	if err := tx.Where(conditions).First(&result).Error; err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
 // GetList retrieves multiple records based on the given conditions and returns them as a slice of objects of the specified type
-func GetList[T any](db *Database, conditions map[string]interface{}) ([]T, error) {
+func GetList[T any](db *Database, conditions map[string]interface{}, preloads ...string) ([]T, error) {
 	var results []T
-	if err := db.client.Where(conditions).Find(&results).Error; err != nil {
+	var tx = db.client
+
+	if len(preloads) > 0 {
+		for _, preload := range preloads {
+			tx = tx.Preload(preload)
+		}
+	}
+
+	if err := tx.Where(conditions).Find(&results).Error; err != nil {
 		return nil, err
 	}
 	return results, nil
