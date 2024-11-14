@@ -3,9 +3,12 @@ package db
 import (
 	"github.com/whyxn/easynas/backend/pkg/db/model"
 	"github.com/whyxn/easynas/backend/pkg/log"
+	"github.com/whyxn/easynas/backend/pkg/util"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+const RecordNotFound = "record not found"
 
 // Database struct to hold the connection instance
 type Database struct {
@@ -52,6 +55,26 @@ func (db *Database) RunMigrations() error {
 	err = db.Client().AutoMigrate(&model.NfsSharePermission{})
 	if err != nil {
 		return err
+	}
+
+	// Create Initial Admin User
+	// Check if admin user already exists in the DB
+	_, err = Get[model.User](db, map[string]interface{}{"email": "admin@easy.nas"})
+	if err != nil && err.Error() == RecordNotFound {
+		// Create and insert initial admin user in DB
+		hashPassword, err := util.HashPassword("admin")
+		if err != nil {
+			log.Logger.Fatalw("Failed to hash admin password", "err", err.Error())
+		}
+		user := &model.User{
+			Name:        "Admin",
+			Email:       "admin@easy.nas",
+			Password:    hashPassword,
+			NasClientIP: "10.0.0.1",
+		}
+		if err = db.Insert(user); err != nil {
+			log.Logger.Fatalw("Failed to create initial admin user", "err", err.Error())
+		}
 	}
 
 	return nil
