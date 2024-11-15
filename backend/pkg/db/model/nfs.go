@@ -5,7 +5,7 @@ import "gorm.io/gorm"
 type NfsShare struct {
 	gorm.Model
 	Pool    string
-	VolName string
+	Dataset string
 }
 
 type NfsSharePermission struct {

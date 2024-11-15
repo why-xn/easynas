@@ -6,6 +6,10 @@ import (
 	"github.com/whyxn/easynas/backend/pkg/util"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+	golog "log"
+	"os"
+	"time"
 )
 
 const RecordNotFound = "record not found"
@@ -20,7 +24,21 @@ var db = Database{}
 // Connect initializes a connection to the SQLite database
 func Connect(dbPath string) error {
 	var err error
-	db.client, err = gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+
+	newLogger := logger.New(
+		golog.New(os.Stdout, "\r\n", golog.LstdFlags), // io writer
+		logger.Config{
+			SlowThreshold:             time.Second,   // Slow SQL threshold
+			LogLevel:                  logger.Silent, // Log level
+			IgnoreRecordNotFoundError: true,          // Ignore ErrRecordNotFound error for logger
+			ParameterizedQueries:      true,          // Don't include params in the SQL log
+			Colorful:                  true,          // Disable color
+		},
+	)
+
+	db.client, err = gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+		Logger: newLogger,
+	})
 	if err != nil {
 		return err
 	}
@@ -71,6 +89,7 @@ func (db *Database) RunMigrations() error {
 			Email:       "admin@easy.nas",
 			Password:    hashPassword,
 			NasClientIP: "10.0.0.1",
+			Role:        model.RoleAdmin,
 		}
 		if err = db.Insert(user); err != nil {
 			log.Logger.Fatalw("Failed to create initial admin user", "err", err.Error())

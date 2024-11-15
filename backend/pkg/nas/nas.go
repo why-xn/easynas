@@ -6,26 +6,27 @@ import (
 	"strings"
 )
 
-// Zpool represents a ZFS zpool with relevant properties.
-type Zpool struct {
-	Name       string
-	Size       string
-	Allocated  string
-	Free       string
-	Fragmented string
-	Health     string
+// ZPool represents a ZFS zpool with relevant properties.
+type ZPool struct {
+	Name       string `json:"name"`
+	Size       string `json:"size"`
+	Allocated  string `json:"allocated"`
+	Free       string `json:"free"`
+	Fragmented string `json:"fragmented"`
+	Health     string `json:"health"`
 }
 
-// ZFSVolume represents a ZFS volume with its name and quota.
-type ZFSVolume struct {
-	Name      string
-	Quota     string
-	Used      string
-	Available string
+// ZFSDataset represents a ZFS volume with its name and quota.
+type ZFSDataset struct {
+	Name         string `json:"name"`
+	Quota        string `json:"quota"`
+	Used         string `json:"used"`
+	Available    string `json:"available"`
+	ShareEnabled bool   `json:"shareEnabled"`
 }
 
-// ListZpools lists all zpools on the system.
-func ListZpools() ([]Zpool, error) {
+// ListZPools lists all zpools on the system.
+func ListZPools() ([]ZPool, error) {
 	cmd := exec.Command("zpool", "list", "-H", "-o", "name,size,alloc,free,frag,health")
 	output, err := cmd.Output()
 	if err != nil {
@@ -33,13 +34,13 @@ func ListZpools() ([]Zpool, error) {
 	}
 
 	lines := strings.Split(string(output), "\n")
-	var zpools []Zpool
+	var zpools []ZPool
 	for _, line := range lines {
 		fields := strings.Fields(line)
 		if len(fields) < 6 {
 			continue
 		}
-		zpools = append(zpools, Zpool{
+		zpools = append(zpools, ZPool{
 			Name:       fields[0],
 			Size:       fields[1],
 			Allocated:  fields[2],
@@ -51,8 +52,8 @@ func ListZpools() ([]Zpool, error) {
 	return zpools, nil
 }
 
-// ListZFSVolumes lists all ZFS volumes on the system.
-func ListZFSVolumes() ([]ZFSVolume, error) {
+// ListZFSDatasets lists all ZFS volumes on the system.
+func ListZFSDatasets() ([]ZFSDataset, error) {
 	cmd := exec.Command("zfs", "list", "-H", "-o", "name,quota,used,avail", "-t", "filesystem")
 	output, err := cmd.Output()
 	if err != nil {
@@ -60,20 +61,20 @@ func ListZFSVolumes() ([]ZFSVolume, error) {
 	}
 
 	lines := strings.Split(string(output), "\n")
-	var volumes []ZFSVolume
+	var datasets []ZFSDataset
 	for _, line := range lines {
 		fields := strings.Fields(line)
 		if len(fields) < 2 {
 			continue
 		}
-		volumes = append(volumes, ZFSVolume{
+		datasets = append(datasets, ZFSDataset{
 			Name:      fields[0],
 			Quota:     fields[1],
 			Used:      fields[2],
 			Available: fields[3],
 		})
 	}
-	return volumes, nil
+	return datasets, nil
 }
 
 // ListZVOLs lists all ZFS ZVOLs.
