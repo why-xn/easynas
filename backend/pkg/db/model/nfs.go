@@ -1,18 +1,16 @@
 package model
 
-import "gorm.io/gorm"
-
 type NfsShare struct {
-	gorm.Model
-	Pool    string
-	Dataset string
+	ID      uint   `json:"id" gorm:"primarykey"`
+	Pool    string `json:"pool"`
+	Dataset string `json:"dataset"`
 }
 
 type NfsSharePermission struct {
-	gorm.Model
-	NfsShareId uint
-	NfsShare   NfsShare `gorm:"foreignKey:NfsShareId"`
-	UserId     uint
-	User       User `gorm:"foreignKey:UserId"`
-	Permission string
+	ID         uint     `json:"id" gorm:"primarykey"`
+	NfsShareId uint     `json:"nfsShareId"`
+	NfsShare   NfsShare `json:"nfsShare" gorm:"foreignKey:NfsShareId"`
+	UserId     uint     `json:"userId"`
+	User       User     `json:"user" gorm:"foreignKey:UserId"`
+	Permission string   `json:"permission"`
 }

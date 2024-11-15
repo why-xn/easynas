@@ -1,17 +1,15 @@
 package model
 
-import "gorm.io/gorm"
-
 const (
 	RoleAdmin = "ROLE_ADMIN"
 	RoleUser  = "ROLE_USER"
 )
 
 type User struct {
-	gorm.Model
-	Name        string
-	Email       string `gorm:"unique"`
-	Password    string
-	NasClientIP string `gorm:"unique"`
-	Role        string
+	ID          uint   `json:"id" gorm:"primarykey"`
+	Name        string `json:"name"`
+	Email       string `json:"email" gorm:"unique"`
+	Password    string `json:"-"`
+	NasClientIP string `json:"nasClientIP" gorm:"unique"`
+	Role        string `json:"role"`
 }
