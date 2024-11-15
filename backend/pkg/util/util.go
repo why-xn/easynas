@@ -1,6 +1,9 @@
 package util
 
-import "golang.org/x/crypto/bcrypt"
+import (
+	"encoding/base64"
+	"golang.org/x/crypto/bcrypt"
+)
 
 // HashPassword generates a bcrypt hash of the password.
 func HashPassword(password string) (string, error) {
@@ -15,4 +18,16 @@ func HashPassword(password string) (string, error) {
 func CheckPasswordHash(password, hashedPassword string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
 	return err == nil
+}
+
+func Base64Encode(data string) string {
+	return base64.StdEncoding.EncodeToString([]byte(data))
+}
+
+func Base64Decode(data string) string {
+	decoded, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return ""
+	}
+	return string(decoded)
 }

@@ -26,20 +26,6 @@ func UserController() *userController {
 	return &uc
 }
 
-func returnErrorResponse(ctx *gin.Context, msg string, statusCode int) {
-	ctx.JSON(statusCode, gin.H{
-		"status": "error",
-		"msg":    msg,
-	})
-}
-
-func isAdmin(requester *model.User) bool {
-	if requester.Role == model.RoleAdmin {
-		return true
-	}
-	return false
-}
-
 // Create User
 func (ctrl *userController) Create(ctx *gin.Context) {
 	requester := context.GetRequesterFromContext(ctx)

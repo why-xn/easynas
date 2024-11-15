@@ -15,4 +15,10 @@ func AddApiRoutes(httpRg *gin.RouterGroup) {
 	httpRg.GET("api/v1/users/:id", v1.UserController().Get)
 	httpRg.GET("api/v1/users", v1.UserController().GetList)
 	httpRg.DELETE("api/v1/users/:id", v1.UserController().Delete)
+
+	httpRg.GET("api/v1/nas/pools/main", v1.NasController().GetPool)
+	httpRg.GET("api/v1/nas/pools", v1.NasController().GetPoolList)
+	httpRg.GET("api/v1/nas/pools/:pool/datasets/:dataset", v1.NasController().GetDataset)
+	httpRg.GET("api/v1/nas/pools/:pool/datasets", v1.NasController().GetDatasetList)
+	httpRg.GET("api/v1/nas/pools/:pool/datasets/:dataset/file-system", v1.NasController().GetDatasetFileSystem)
 }

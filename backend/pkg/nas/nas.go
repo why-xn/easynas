@@ -2,6 +2,7 @@ package nas
 
 import (
 	"fmt"
+	"github.com/whyxn/easynas/backend/pkg/util"
 	"os/exec"
 	"strings"
 )
@@ -18,6 +19,7 @@ type ZPool struct {
 
 // ZFSDataset represents a ZFS volume with its name and quota.
 type ZFSDataset struct {
+	ID           string `json:"id"`
 	Name         string `json:"name"`
 	Quota        string `json:"quota"`
 	Used         string `json:"used"`
@@ -68,6 +70,7 @@ func ListZFSDatasets() ([]ZFSDataset, error) {
 			continue
 		}
 		datasets = append(datasets, ZFSDataset{
+			ID:        util.Base64Encode(fields[0]),
 			Name:      fields[0],
 			Quota:     fields[1],
 			Used:      fields[2],
