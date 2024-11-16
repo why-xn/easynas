@@ -103,13 +103,18 @@ func UpdateQuota(volumeName, quota string) error {
 }
 
 // CreateNFSShare creates an NFS share for a given ZFS volume.
-func CreateNFSShare(poolName, volumeName string) error {
-	cmd := exec.Command("zfs", "set", "sharenfs=on", fmt.Sprintf("%s/%s", poolName, volumeName))
+func CreateNFSShare(zfsDatasetName string, rwIPs []string, roIPs []string) error {
+	rwAccess := fmt.Sprintf("rw=%s", strings.Join(rwIPs, ":"))
+	roAccess := fmt.Sprintf("ro=%s", strings.Join(roIPs, ":"))
+	shareNfs := fmt.Sprintf("%s,%s,insecure", rwAccess, roAccess)
+
+	cmd := exec.Command("zfs", "set", fmt.Sprintf("sharenfs=%s", shareNfs), zfsDatasetName)
+
 	err := cmd.Run()
 	if err != nil {
 		return err
 	}
-	return setPathPermissions(fmt.Sprintf("%s/%s", poolName, volumeName))
+	return setPathPermissions(fmt.Sprintf("/%s", zfsDatasetName))
 }
 
 // setPathPermissions sets ownership to nobody:nogroup and permissions to 777 on the specified ZFS path.

@@ -14,7 +14,10 @@ import (
 	"strings"
 )
 
-const DefaultPool string = "naspool"
+const (
+	DefaultPool     string = "naspool"
+	DefaultClientIP string = "10.0.0.1"
+)
 
 type NasControllerInterface interface {
 	GetPool(c *gin.Context)
@@ -24,6 +27,7 @@ type NasControllerInterface interface {
 	GetDatasetFileSystem(c *gin.Context)
 	CreateDataset(c *gin.Context)
 	DeleteDataset(c *gin.Context)
+	CreateNfsShare(c *gin.Context)
 }
 
 type nasController struct{}
@@ -313,6 +317,64 @@ func (ctrl *nasController) DeleteDataset(ctx *gin.Context) {
 		if err = db.GetDb().Delete(&model.NfsSharePermission{}, map[string]interface{}{"nfsShareId": nfsShare.ID}); err != nil {
 			log.Logger.Warn("Failed delete nfs share permission records from db", "err", err)
 		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+	})
+}
+
+// CreateNfsShare
+func (ctrl *nasController) CreateNfsShare(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	} else if !isAdmin(requester) {
+		returnErrorResponse(ctx, "permission denied", http.StatusUnauthorized)
+		return
+	}
+
+	var input dto.CreateNfsShareInputDTO
+
+	input.Pool = ctx.Param("pool")
+	if input.Pool == "" {
+		input.Pool = DefaultPool
+	}
+
+	input.DatasetName = ctx.Param("dataset")
+	input.DatasetName = util.Base64Decode(input.DatasetName)
+	if input.DatasetName == "" {
+		returnErrorResponse(ctx, "invalid dataset", http.StatusBadRequest)
+		return
+	}
+
+	dataset, err := findDataset(input.DatasetName)
+	if err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset not found", http.StatusBadRequest)
+		return
+	}
+
+	err = nas.CreateNFSShare(input.DatasetName, []string{DefaultClientIP}, []string{})
+	if err != nil {
+		log.Logger.Errorw("Failed to create nfs share", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	nfsShare := model.NfsShare{
+		Pool:    input.Pool,
+		Dataset: input.DatasetName,
+	}
+	if err = db.GetDb().Insert(&nfsShare); err != nil {
+		log.Logger.Fatalw("Failed to insert nfs share record in db", "err", err.Error())
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
