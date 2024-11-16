@@ -81,6 +81,28 @@ func (ctrl *nasController) GetPoolList(ctx *gin.Context) {
 	})
 }
 
+func findDataset(dsName string) (*nas.ZFSDataset, error) {
+	nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"name": dsName})
+
+	datasets, err := nas.ListZFSDatasets()
+	if err != nil {
+		log.Logger.Errorw("Failed to fetch zfs datasets list", "err", err)
+		return nil, err
+	}
+
+	var dataset *nas.ZFSDataset
+	for _, ds := range datasets {
+		if dsName == ds.Name {
+			if nfsShare != nil {
+				ds.ShareEnabled = true
+			}
+			dataset = &ds
+			break
+		}
+	}
+	return dataset, nil
+}
+
 // GetDataset
 func (ctrl *nasController) GetDataset(ctx *gin.Context) {
 	requester := context.GetRequesterFromContext(ctx)
@@ -89,36 +111,28 @@ func (ctrl *nasController) GetDataset(ctx *gin.Context) {
 		return
 	}
 
-	dataset := ctx.Param("dataset")
-	dataset = util.Base64Decode(dataset)
-	if dataset == "" {
+	dsName := ctx.Param("dataset")
+	dsName = util.Base64Decode(dsName)
+	if dsName == "" {
 		returnErrorResponse(ctx, "invalid dataset", http.StatusBadRequest)
 		return
 	}
 
-	nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"pool": DefaultPool, "name": dataset})
-
-	datasets, err := nas.ListZFSDatasets()
+	dataset, err := findDataset(dsName)
 	if err != nil {
-		log.Logger.Errorw("Failed to fetch zfs datasets list", "err", err)
-		returnErrorResponse(ctx, err.Error(), http.StatusInternalServerError)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	for _, ds := range datasets {
-		if dataset == ds.Name {
-			if nfsShare != nil {
-				ds.ShareEnabled = true
-			}
-			ctx.JSON(http.StatusOK, gin.H{
-				"status": "success",
-				"data":   ds,
-			})
-			return
-		}
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset not found", http.StatusNotFound)
+		return
 	}
 
-	returnErrorResponse(ctx, "dataset not found", http.StatusNotFound)
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data":   dataset,
+	})
 }
 
 // GetDatasetList
@@ -182,24 +196,10 @@ func (ctrl *nasController) GetDatasetFileSystem(ctx *gin.Context) {
 	path := ctx.Param("path")
 	path = util.Base64Decode(path)
 
-	nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"name": dsName})
-
-	datasets, err := nas.ListZFSDatasets()
+	dataset, err := findDataset(dsName)
 	if err != nil {
-		log.Logger.Errorw("Failed to fetch zfs datasets list", "err", err)
-		returnErrorResponse(ctx, err.Error(), http.StatusInternalServerError)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
 		return
-	}
-
-	var dataset = new(nas.ZFSDataset)
-	for _, ds := range datasets {
-		if dsName == ds.Name {
-			if nfsShare != nil {
-				ds.ShareEnabled = true
-			}
-			dataset = &ds
-			break
-		}
 	}
 
 	if dataset == nil {
@@ -244,6 +244,17 @@ func (ctrl *nasController) CreateDataset(ctx *gin.Context) {
 		input.Pool = DefaultPool
 	}
 
+	dataset, err := findDataset(input.DatasetName)
+	if err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if dataset != nil {
+		returnErrorResponse(ctx, "dataset already exists", http.StatusBadRequest)
+		return
+	}
+
 	err = nas.CreateZFSVolume(fmt.Sprintf("%s/%s", input.Pool, input.DatasetName), input.Quota)
 	if err != nil {
 		log.Logger.Errorw("Failed create zfs dataset", "err", err)
@@ -274,19 +285,10 @@ func (ctrl *nasController) DeleteDataset(ctx *gin.Context) {
 		return
 	}
 
-	datasets, err := nas.ListZFSDatasets()
+	dataset, err := findDataset(dsName)
 	if err != nil {
-		log.Logger.Errorw("Failed to fetch zfs datasets list", "err", err)
-		returnErrorResponse(ctx, err.Error(), http.StatusInternalServerError)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
 		return
-	}
-
-	var dataset = new(nas.ZFSDataset)
-	for _, ds := range datasets {
-		if dsName == ds.Name {
-			dataset = &ds
-			break
-		}
 	}
 
 	if dataset == nil {
