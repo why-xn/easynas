@@ -6,6 +6,7 @@ import (
 	"github.com/whyxn/easynas/backend/pkg/context"
 	"github.com/whyxn/easynas/backend/pkg/db"
 	"github.com/whyxn/easynas/backend/pkg/db/model"
+	"github.com/whyxn/easynas/backend/pkg/dto"
 	"github.com/whyxn/easynas/backend/pkg/log"
 	"github.com/whyxn/easynas/backend/pkg/nas"
 	"github.com/whyxn/easynas/backend/pkg/util"
@@ -21,6 +22,8 @@ type NasControllerInterface interface {
 	GetDataset(c *gin.Context)
 	GetDatasetList(c *gin.Context)
 	GetDatasetFileSystem(c *gin.Context)
+	CreateDataset(c *gin.Context)
+	DeleteDataset(c *gin.Context)
 }
 
 type nasController struct{}
@@ -176,7 +179,10 @@ func (ctrl *nasController) GetDatasetFileSystem(ctx *gin.Context) {
 		return
 	}
 
-	nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"pool": DefaultPool, "name": dsName})
+	path := ctx.Param("path")
+	path = util.Base64Decode(path)
+
+	nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"name": dsName})
 
 	datasets, err := nas.ListZFSDatasets()
 	if err != nil {
@@ -201,7 +207,7 @@ func (ctrl *nasController) GetDatasetFileSystem(ctx *gin.Context) {
 		return
 	}
 
-	fileList, err := nas.ListAndSortFilesFolders(dataset.Name)
+	fileList, err := nas.ListAndSortFilesFolders(dataset.Name + path)
 	if err != nil {
 		log.Logger.Errorw("Failed to fetch filesystem", "err", err)
 		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
@@ -211,5 +217,103 @@ func (ctrl *nasController) GetDatasetFileSystem(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data":   fileList,
+	})
+}
+
+// CreateDataset
+func (ctrl *nasController) CreateDataset(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	} else if !isAdmin(requester) {
+		returnErrorResponse(ctx, "permission denied", http.StatusUnauthorized)
+		return
+	}
+
+	var input dto.CreateZfsDatasetInputDTO
+
+	err := ctx.BindJSON(&input)
+	if err != nil {
+		log.Logger.Errorw("Failed to bind JSON", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if input.Pool == "" {
+		input.Pool = DefaultPool
+	}
+
+	err = nas.CreateZFSVolume(fmt.Sprintf("%s/%s", input.Pool, input.DatasetName), input.Quota)
+	if err != nil {
+		log.Logger.Errorw("Failed create zfs dataset", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+	})
+}
+
+// DeleteDataset
+func (ctrl *nasController) DeleteDataset(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	} else if !isAdmin(requester) {
+		returnErrorResponse(ctx, "permission denied", http.StatusUnauthorized)
+		return
+	}
+
+	dsName := ctx.Param("dataset")
+	dsName = util.Base64Decode(dsName)
+	if dsName == "" {
+		returnErrorResponse(ctx, "invalid dataset", http.StatusBadRequest)
+		return
+	}
+
+	datasets, err := nas.ListZFSDatasets()
+	if err != nil {
+		log.Logger.Errorw("Failed to fetch zfs datasets list", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var dataset = new(nas.ZFSDataset)
+	for _, ds := range datasets {
+		if dsName == ds.Name {
+			dataset = &ds
+			break
+		}
+	}
+
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset not found", http.StatusNotFound)
+		return
+	}
+
+	err = nas.DeleteZFSVolume(dsName)
+	if err != nil {
+		log.Logger.Errorw("Failed delete zfs dataset", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"name": dsName})
+
+	if nfsShare != nil {
+		if err = db.GetDb().Delete(&model.NfsShare{}, map[string]interface{}{"dataset": dsName}); err != nil {
+			log.Logger.Warn("Failed delete nfs share record from db", "err", err)
+		}
+
+		if err = db.GetDb().Delete(&model.NfsSharePermission{}, map[string]interface{}{"nfsShareId": nfsShare.ID}); err != nil {
+			log.Logger.Warn("Failed delete nfs share permission records from db", "err", err)
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
 	})
 }
