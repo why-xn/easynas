@@ -1,6 +1,7 @@
 package nas
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/whyxn/easynas/backend/pkg/util"
 	"os/exec"
@@ -25,6 +26,14 @@ type ZFSDataset struct {
 	Used         string `json:"used"`
 	Available    string `json:"available"`
 	ShareEnabled bool   `json:"shareEnabled"`
+}
+
+// Snapshot represents the detailed information of a ZFS snapshot.
+type Snapshot struct {
+	Name       string
+	Used       string
+	Referenced string
+	Creation   string
 }
 
 // ListZPools lists all zpools on the system.
@@ -160,4 +169,68 @@ func DeleteNFSShare(volumeName string) error {
 func DeleteZFSVolume(volumeName string) error {
 	cmd := exec.Command("zfs", "destroy", volumeName)
 	return cmd.Run()
+}
+
+// ListSnapshots lists all snapshots for a given ZFS dataset with detailed information.
+func ListSnapshots(dataset string) ([]Snapshot, error) {
+	// Execute the zfs command to list snapshots with additional fields
+	cmd := exec.Command("zfs", "list", "-t", "snapshot", "-o", "name,used,referenced,creation", "-H", "-d", "1", dataset)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list snapshots: %w", err)
+	}
+
+	// Parse the output into Snapshot objects
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	var snapshots []Snapshot
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue // Skip malformed lines
+		}
+		snapshots = append(snapshots, Snapshot{
+			Name:       fields[0],
+			Used:       fields[1],
+			Referenced: fields[2],
+			Creation:   strings.Join(fields[3:], " "), // Creation time can have spaces
+		})
+	}
+
+	return snapshots, nil
+}
+
+// CreateSnapshot creates a snapshot for a given ZFS dataset.
+func CreateSnapshot(dataset, snapshotName string) error {
+	snapshot := fmt.Sprintf("%s@%s", dataset, snapshotName)
+	// Execute the zfs command to create the snapshot
+	cmd := exec.Command("zfs", "snapshot", snapshot)
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to create snapshot: %w", err)
+	}
+	return nil
+}
+
+// RestoreFromSnapshot rolls back a dataset to a given snapshot.
+func RestoreFromSnapshot(snapshotName string) error {
+	// Execute the zfs command to rollback the dataset to the snapshot
+	cmd := exec.Command("zfs", "rollback", "-r", snapshotName)
+	output, err := cmd.CombinedOutput() // Capture both stdout and stderr
+	if err != nil {
+		return fmt.Errorf("failed to restore from snapshot '%s': %s (%w)", snapshotName, string(output), err)
+	}
+	return nil
+}
+
+// DeleteSnapshot deletes a specific ZFS snapshot.
+func DeleteSnapshot(snapshotName string) error {
+	// Execute the zfs destroy command
+	cmd := exec.Command("zfs", "destroy", snapshotName)
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to delete snapshot '%s': %w", snapshotName, err)
+	}
+	return nil
 }

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -37,6 +38,10 @@ type NasControllerInterface interface {
 	GetDatasetFileSystem(c *gin.Context)
 	UploadFileToDataset(ctx *gin.Context)
 	DeleteFileFromDataset(ctx *gin.Context)
+	CreateSnapshot(ctx *gin.Context)
+	ListSnapshot(ctx *gin.Context)
+	RestoreFromSnapshot(ctx *gin.Context)
+	DeleteSnapshot(ctx *gin.Context)
 }
 
 type nasController struct{}
@@ -813,6 +818,196 @@ func (ctrl *nasController) DeleteFileFromDataset(ctx *gin.Context) {
 	}
 
 	// Respond with a success message
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+	})
+}
+
+// CreateSnapshot
+func (ctrl *nasController) CreateSnapshot(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	} else if !isAdmin(requester) {
+		returnErrorResponse(ctx, "permission denied", http.StatusUnauthorized)
+		return
+	}
+
+	datasetName := ctx.Param("dataset")
+	datasetName = util.Base64Decode(datasetName)
+	if datasetName == "" {
+		returnErrorResponse(ctx, "invalid dataset", http.StatusBadRequest)
+		return
+	}
+
+	dataset, err := findDataset(datasetName)
+	if err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset does not exist", http.StatusBadRequest)
+		return
+	}
+
+	err = nas.CreateSnapshot(datasetName, fmt.Sprintf("snap-%d", time.Now().UTC().Unix()))
+	if err != nil {
+		log.Logger.Errorw("Failed create snapshot", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+	})
+}
+
+// GetSnapshotList
+func (ctrl *nasController) GetSnapshotList(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	}
+
+	datasetName := ctx.Param("dataset")
+	datasetName = util.Base64Decode(datasetName)
+	if datasetName == "" {
+		returnErrorResponse(ctx, "invalid dataset", http.StatusBadRequest)
+		return
+	}
+
+	dataset, err := findDataset(datasetName)
+	if err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset does not exist", http.StatusBadRequest)
+		return
+	}
+
+	snapshots, err := nas.ListSnapshots(datasetName)
+	if err != nil {
+		log.Logger.Errorw("Failed to fetch snapshot list", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data":   snapshots,
+	})
+}
+
+// RestoreFromSnapshot
+func (ctrl *nasController) RestoreFromSnapshot(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	} else if !isAdmin(requester) {
+		returnErrorResponse(ctx, "permission denied", http.StatusUnauthorized)
+		return
+	}
+
+	datasetName := ctx.Param("dataset")
+	datasetName = util.Base64Decode(datasetName)
+	if datasetName == "" {
+		returnErrorResponse(ctx, "invalid dataset", http.StatusBadRequest)
+		return
+	}
+
+	dataset, err := findDataset(datasetName)
+	if err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset does not exist", http.StatusBadRequest)
+		return
+	}
+
+	var input dto.RestoreFromSnapshotInputDTO
+
+	err = ctx.BindJSON(&input)
+	if err != nil {
+		log.Logger.Errorw("Failed to bind JSON", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if input.SnapshotName == "" {
+		returnErrorResponse(ctx, "invalid snapshot name", http.StatusBadRequest)
+		return
+	}
+
+	err = nas.RestoreFromSnapshot(input.SnapshotName)
+	if err != nil {
+		log.Logger.Errorw("Failed to restore from snapshot", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+	})
+}
+
+// DeleteSnapshot
+func (ctrl *nasController) DeleteSnapshot(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	} else if !isAdmin(requester) {
+		returnErrorResponse(ctx, "permission denied", http.StatusUnauthorized)
+		return
+	}
+
+	datasetName := ctx.Param("dataset")
+	datasetName = util.Base64Decode(datasetName)
+	if datasetName == "" {
+		returnErrorResponse(ctx, "invalid dataset", http.StatusBadRequest)
+		return
+	}
+
+	dataset, err := findDataset(datasetName)
+	if err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset does not exist", http.StatusBadRequest)
+		return
+	}
+
+	var input dto.RestoreFromSnapshotInputDTO
+
+	err = ctx.BindJSON(&input)
+	if err != nil {
+		log.Logger.Errorw("Failed to bind JSON", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if input.SnapshotName == "" {
+		returnErrorResponse(ctx, "invalid snapshot name", http.StatusBadRequest)
+		return
+	}
+
+	err = nas.DeleteSnapshot(input.SnapshotName)
+	if err != nil {
+		log.Logger.Errorw("Failed to delete snapshot", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{
 		"status": "success",
 	})

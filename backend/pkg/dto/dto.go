@@ -60,3 +60,7 @@ type AddUserPermissionToNfsShareInputDTO struct {
 type RemoveUserPermissionFromNfsShareInputDTO struct {
 	Id uint `json:"id"`
 }
+
+type RestoreFromSnapshotInputDTO struct {
+	SnapshotName string `json:"snapshotName"`
+}
