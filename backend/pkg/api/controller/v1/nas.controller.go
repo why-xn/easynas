@@ -12,6 +12,8 @@ import (
 	"github.com/whyxn/easynas/backend/pkg/nas"
 	"github.com/whyxn/easynas/backend/pkg/util"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -33,6 +35,8 @@ type NasControllerInterface interface {
 	GetNfsShareUserPermissions(c *gin.Context)
 	AddUserPermissionToNfsShare(c *gin.Context)
 	RemoveUserPermissionFromNfsShare(ctx *gin.Context)
+	UploadFileToDataset(ctx *gin.Context)
+	DeleteFileFromDataset(ctx *gin.Context)
 }
 
 type nasController struct{}
@@ -657,5 +661,159 @@ func (ctrl *nasController) GetNfsShareUserPermissions(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data":   permissionList,
+	})
+}
+
+// UploadFileToDataset
+func (ctrl *nasController) UploadFileToDataset(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	}
+
+	datasetName := ctx.Param("dataset")
+	datasetName = util.Base64Decode(datasetName)
+	if datasetName == "" {
+		returnErrorResponse(ctx, "invalid dataset", http.StatusBadRequest)
+		return
+	}
+
+	relativePath := ctx.Param("path")
+	relativePath = util.Base64Decode(relativePath)
+
+	dataset, err := findDataset(datasetName)
+	if err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset not found", http.StatusBadRequest)
+		return
+	}
+
+	if !isAdmin(requester) {
+		nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"dataset": datasetName})
+		if nfsShare == nil {
+			returnErrorResponse(ctx, "nfs share not found", http.StatusBadRequest)
+			return
+		}
+
+		// Fetch User's Nfs share permission
+		userPermission, _ := db.Get[model.NfsSharePermission](db.GetDb(), map[string]interface{}{"nfs_share_id": nfsShare.ID, "user_id": requester.ID}, "NfsShare", "User")
+		if userPermission == nil {
+			log.Logger.Errorw("user don't have any permission on this dataset", "err", err)
+			returnErrorResponse(ctx, "you don't have any read/write permission on this dataset", http.StatusBadRequest)
+			return
+		}
+
+		if userPermission.Permission != enum.ReadWrite {
+			returnErrorResponse(ctx, "you don't have any write permission on this dataset", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Get the file from the request
+	file, err := ctx.FormFile("file")
+	if err != nil {
+		returnErrorResponse(ctx, "file not found in the request", http.StatusBadRequest)
+		return
+	}
+
+	// Specify the directory to save the uploaded file
+	uploadDir := fmt.Sprintf("/%s/%s", datasetName, relativePath)
+
+	// Create the directory if it doesn't exist
+	if err = os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+		log.Logger.Errorw("failed to create upload directory", err, err.Error())
+		returnErrorResponse(ctx, "Failed to create upload directory", http.StatusBadRequest)
+		return
+	}
+
+	// Save the file to the specified directory
+	filePath := filepath.Join(uploadDir, file.Filename)
+	if err = ctx.SaveUploadedFile(file, filePath); err != nil {
+		log.Logger.Errorw("failed to save file", err, err.Error())
+		returnErrorResponse(ctx, "Failed to save file", http.StatusBadRequest)
+		return
+	}
+
+	// Respond with a success message
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+	})
+}
+
+// DeleteFileFromDataset
+func (ctrl *nasController) DeleteFileFromDataset(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	}
+
+	datasetName := ctx.Param("dataset")
+	datasetName = util.Base64Decode(datasetName)
+	if datasetName == "" {
+		returnErrorResponse(ctx, "invalid dataset", http.StatusBadRequest)
+		return
+	}
+
+	relativePath := ctx.Param("path")
+	relativePath = util.Base64Decode(relativePath)
+
+	dataset, err := findDataset(datasetName)
+	if err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset not found", http.StatusBadRequest)
+		return
+	}
+
+	if !isAdmin(requester) {
+		nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"dataset": datasetName})
+		if nfsShare == nil {
+			returnErrorResponse(ctx, "nfs share not found", http.StatusBadRequest)
+			return
+		}
+
+		// Fetch User's Nfs share permission
+		userPermission, _ := db.Get[model.NfsSharePermission](db.GetDb(), map[string]interface{}{"nfs_share_id": nfsShare.ID, "user_id": requester.ID}, "NfsShare", "User")
+		if userPermission == nil {
+			log.Logger.Errorw("user don't have any permission on this dataset", "err", err)
+			returnErrorResponse(ctx, "you don't have any read/write permission on this dataset", http.StatusBadRequest)
+			return
+		}
+
+		if userPermission.Permission != enum.ReadWrite {
+			returnErrorResponse(ctx, "you don't have any write permission on this dataset", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Construct the full file path (relative to the base directory)
+	filePath := filepath.Join(fmt.Sprintf("/%s/%s", datasetName, relativePath))
+
+	// Check if the file exists
+	if _, err = os.Stat(filePath); os.IsNotExist(err) {
+		log.Logger.Errorw("file not found", "err", err)
+		returnErrorResponse(ctx, "file not found", http.StatusBadRequest)
+		return
+	}
+
+	// Attempt to delete the file
+	if err := os.Remove(filePath); err != nil {
+		log.Logger.Errorw("failed to delete file", "err", err)
+		returnErrorResponse(ctx, "failed to delete file", http.StatusBadRequest)
+		return
+	}
+
+	// Respond with a success message
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
 	})
 }
