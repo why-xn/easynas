@@ -18,10 +18,16 @@ func AddApiRoutes(httpRg *gin.RouterGroup) {
 
 	httpRg.GET("api/v1/nas/pools/main", v1.NasController().GetPool)
 	httpRg.GET("api/v1/nas/pools", v1.NasController().GetPoolList)
+
 	httpRg.GET("api/v1/nas/pools/:pool/datasets/:dataset", v1.NasController().GetDataset)
 	httpRg.GET("api/v1/nas/pools/:pool/datasets", v1.NasController().GetDatasetList)
 	httpRg.POST("api/v1/nas/pools/:pool/datasets", v1.NasController().CreateDataset)
 	httpRg.DELETE("api/v1/nas/pools/:pool/datasets/:dataset", v1.NasController().DeleteDataset)
 	httpRg.GET("api/v1/nas/pools/:pool/datasets/:dataset/file-system/:path", v1.NasController().GetDatasetFileSystem)
+
 	httpRg.POST("api/v1/nas/pools/:pool/datasets/:dataset/nfs-share", v1.NasController().CreateNfsShare)
+	httpRg.DELETE("api/v1/nas/pools/:pool/datasets/:dataset/nfs-share", v1.NasController().DeleteNfsShare)
+	httpRg.GET("api/v1/nas/pools/:pool/datasets/:dataset/nfs-share/permissions", v1.NasController().GetNfsShareUserPermissions)
+	httpRg.POST("api/v1/nas/pools/:pool/datasets/:dataset/nfs-share/permissions", v1.NasController().AddUserPermissionToNfsShare)
+	httpRg.DELETE("api/v1/nas/pools/:pool/datasets/:dataset/nfs-share/permissions/:id", v1.NasController().RemoveUserPermissionFromNfsShare)
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/whyxn/easynas/backend/pkg/db"
 	"github.com/whyxn/easynas/backend/pkg/db/model"
 	"github.com/whyxn/easynas/backend/pkg/dto"
+	"github.com/whyxn/easynas/backend/pkg/enum"
 	"github.com/whyxn/easynas/backend/pkg/log"
 	"github.com/whyxn/easynas/backend/pkg/nas"
 	"github.com/whyxn/easynas/backend/pkg/util"
@@ -28,6 +29,10 @@ type NasControllerInterface interface {
 	CreateDataset(c *gin.Context)
 	DeleteDataset(c *gin.Context)
 	CreateNfsShare(c *gin.Context)
+	DeleteNfsShare(c *gin.Context)
+	GetNfsShareUserPermissions(c *gin.Context)
+	AddUserPermissionToNfsShare(c *gin.Context)
+	RemoveUserPermissionFromNfsShare(ctx *gin.Context)
 }
 
 type nasController struct{}
@@ -379,5 +384,278 @@ func (ctrl *nasController) CreateNfsShare(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"status": "success",
+	})
+}
+
+// DeleteNfsShare
+func (ctrl *nasController) DeleteNfsShare(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	} else if !isAdmin(requester) {
+		returnErrorResponse(ctx, "permission denied", http.StatusUnauthorized)
+		return
+	}
+
+	var input dto.DeleteNfsShareInputDTO
+
+	input.Pool = ctx.Param("pool")
+	if input.Pool == "" {
+		input.Pool = DefaultPool
+	}
+
+	input.DatasetName = ctx.Param("dataset")
+	input.DatasetName = util.Base64Decode(input.DatasetName)
+	if input.DatasetName == "" {
+		returnErrorResponse(ctx, "invalid dataset", http.StatusBadRequest)
+		return
+	}
+
+	dataset, err := findDataset(input.DatasetName)
+	if err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset not found", http.StatusBadRequest)
+		return
+	}
+
+	nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"dataset": input.DatasetName})
+	if nfsShare == nil {
+		returnErrorResponse(ctx, "nfs share not found", http.StatusBadRequest)
+		return
+	}
+
+	err = nas.DeleteNFSShare(input.DatasetName)
+	if err != nil {
+		log.Logger.Errorw("Failed to delete nfs share", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := db.GetDb().Delete(&model.NfsShare{}, map[string]interface{}{"pool": input.Pool, "dataset": input.DatasetName}); err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := db.GetDb().Delete(&model.NfsSharePermission{}, map[string]interface{}{"nfs_share_id": 1}); err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+	})
+}
+
+// AddUserPermissionToNfsShare
+func (ctrl *nasController) AddUserPermissionToNfsShare(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	} else if !isAdmin(requester) {
+		returnErrorResponse(ctx, "permission denied", http.StatusUnauthorized)
+		return
+	}
+
+	var input dto.AddUserPermissionToNfsShareInputDTO
+	err := ctx.BindJSON(&input)
+	if err != nil {
+		log.Logger.Errorw("Failed to bind JSON", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	input.DatasetName = ctx.Param("dataset")
+	input.DatasetName = util.Base64Decode(input.DatasetName)
+	if input.DatasetName == "" {
+		returnErrorResponse(ctx, "invalid dataset", http.StatusBadRequest)
+		return
+	}
+
+	dataset, err := findDataset(input.DatasetName)
+	if err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset not found", http.StatusBadRequest)
+		return
+	}
+
+	nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"dataset": input.DatasetName})
+	if nfsShare == nil {
+		returnErrorResponse(ctx, "nfs share not found", http.StatusBadRequest)
+		return
+	}
+
+	// Insert Nfs Share Permission data in db
+	nfsSharePermission := model.NfsSharePermission{
+		NfsShareId: nfsShare.ID,
+		UserId:     input.UserId,
+		Permission: input.Permission,
+	}
+	if err = db.GetDb().Insert(&nfsSharePermission); err != nil {
+		log.Logger.Fatalw("Failed to insert nfs share permission record in db", "err", err.Error())
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Fetch all Nfs share permissions from db
+	permissionList, err := db.GetList[model.NfsSharePermission](db.GetDb(), map[string]interface{}{"nfs_share_id": nfsShare.ID}, "NfsShare", "User")
+	if err != nil {
+		log.Logger.Errorw("Failed to fetch nfs share permission list", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var rPermissions []string
+	var rwPermissions = []string{DefaultClientIP}
+
+	for _, p := range permissionList {
+		if p.Permission == enum.ReadOnly {
+			rPermissions = append(rPermissions, p.User.NasClientIP)
+		} else if p.Permission == enum.ReadWrite {
+			rwPermissions = append(rwPermissions, p.User.NasClientIP)
+		}
+	}
+
+	// Recreate NFS Share with updated permission
+	err = nas.CreateNFSShare(input.DatasetName, rwPermissions, rwPermissions)
+	if err != nil {
+		log.Logger.Errorw("Failed to re-create nfs share with update permissions", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+	})
+}
+
+// RemoveUserPermissionFromNfsShare
+func (ctrl *nasController) RemoveUserPermissionFromNfsShare(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	} else if !isAdmin(requester) {
+		returnErrorResponse(ctx, "permission denied", http.StatusUnauthorized)
+		return
+	}
+
+	permissionId := ctx.Param("id")
+
+	nfsSharePermission, _ := db.Get[model.NfsSharePermission](db.GetDb(), map[string]interface{}{"ID": permissionId}, "NfsShare", "User")
+	if nfsSharePermission == nil {
+		returnErrorResponse(ctx, "nfs share permission not found", http.StatusBadRequest)
+		return
+	}
+
+	dataset, err := findDataset(nfsSharePermission.NfsShare.Dataset)
+	if err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset not found", http.StatusBadRequest)
+		return
+	}
+
+	// Delete Nfs Share Permission data from db
+	if err := db.GetDb().Delete(&model.NfsSharePermission{}, map[string]interface{}{"ID": permissionId}); err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Fetch all Nfs share permissions from db
+	permissionList, err := db.GetList[model.NfsSharePermission](db.GetDb(), map[string]interface{}{"nfs_share_id": nfsSharePermission.NfsShare.ID}, "NfsShare", "User")
+	if err != nil {
+		log.Logger.Errorw("Failed to fetch nfs share permission list", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var rPermissions []string
+	var rwPermissions = []string{DefaultClientIP}
+
+	for _, p := range permissionList {
+		if p.Permission == enum.ReadOnly {
+			rPermissions = append(rPermissions, p.User.NasClientIP)
+		} else if p.Permission == enum.ReadWrite {
+			rwPermissions = append(rwPermissions, p.User.NasClientIP)
+		}
+	}
+
+	// Recreate NFS Share with updated permission
+	err = nas.CreateNFSShare(nfsSharePermission.NfsShare.Dataset, rwPermissions, rwPermissions)
+	if err != nil {
+		log.Logger.Errorw("Failed to re-create nfs share with update permissions", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+	})
+}
+
+// GetNfsShareUserPermissions
+func (ctrl *nasController) GetNfsShareUserPermissions(ctx *gin.Context) {
+	requester := context.GetRequesterFromContext(ctx)
+	if requester == nil {
+		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
+		return
+	} else if !isAdmin(requester) {
+		returnErrorResponse(ctx, "permission denied", http.StatusUnauthorized)
+		return
+	}
+
+	pool := ctx.Param("pool")
+	if pool == "" {
+		pool = DefaultPool
+	}
+
+	datasetName := ctx.Param("dataset")
+	datasetName = util.Base64Decode(datasetName)
+	if datasetName == "" {
+		returnErrorResponse(ctx, "invalid dataset", http.StatusBadRequest)
+		return
+	}
+
+	dataset, err := findDataset(datasetName)
+	if err != nil {
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if dataset == nil {
+		returnErrorResponse(ctx, "dataset not found", http.StatusBadRequest)
+		return
+	}
+
+	nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"dataset": datasetName})
+	if nfsShare == nil {
+		returnErrorResponse(ctx, "nfs share not found", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch all Nfs share permissions from db
+	permissionList, err := db.GetList[model.NfsSharePermission](db.GetDb(), map[string]interface{}{"nfs_share_id": nfsShare.ID}, "NfsShare", "User")
+	if err != nil {
+		log.Logger.Errorw("Failed to fetch nfs share permission list", "err", err)
+		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data":   permissionList,
 	})
 }

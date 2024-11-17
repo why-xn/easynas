@@ -1,5 +1,7 @@
 package dto
 
+import "github.com/whyxn/easynas/backend/pkg/enum"
+
 type LoginInputDTO struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -45,13 +47,14 @@ type CreateNfsShareInputDTO struct {
 }
 
 type DeleteNfsShareInputDTO struct {
-	Id uint `json:"id"`
+	Pool        string `json:"pool"`
+	DatasetName string `json:"datasetName"`
 }
 
 type AddUserPermissionToNfsShareInputDTO struct {
-	UserId     uint   `json:"userId"`
-	NfsShareId uint   `json:"nfsShareId"`
-	Permission string `json:"permission"`
+	UserId      uint                `json:"userId"`
+	DatasetName string              `json:"datasetName"`
+	Permission  enum.PermissionType `json:"permission"`
 }
 
 type RemoveUserPermissionFromNfsShareInputDTO struct {
