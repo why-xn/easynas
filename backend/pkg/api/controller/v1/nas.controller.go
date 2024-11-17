@@ -27,7 +27,6 @@ type NasControllerInterface interface {
 	GetPoolList(c *gin.Context)
 	GetDataset(c *gin.Context)
 	GetDatasetList(c *gin.Context)
-	GetDatasetFileSystem(c *gin.Context)
 	CreateDataset(c *gin.Context)
 	DeleteDataset(c *gin.Context)
 	CreateNfsShare(c *gin.Context)
@@ -35,6 +34,7 @@ type NasControllerInterface interface {
 	GetNfsShareUserPermissions(c *gin.Context)
 	AddUserPermissionToNfsShare(c *gin.Context)
 	RemoveUserPermissionFromNfsShare(ctx *gin.Context)
+	GetDatasetFileSystem(c *gin.Context)
 	UploadFileToDataset(ctx *gin.Context)
 	DeleteFileFromDataset(ctx *gin.Context)
 }
