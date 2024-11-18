@@ -37,7 +37,7 @@ func AddApiRoutes(httpRg *gin.RouterGroup) {
 	httpRg.GET("api/v1/nas/pools/:pool/datasets/:dataset/snapshots", v1.NasController().GetSnapshotList)
 	httpRg.POST("api/v1/nas/pools/:pool/datasets/:dataset/snapshots", v1.NasController().CreateSnapshot)
 	httpRg.POST("api/v1/nas/pools/:pool/datasets/:dataset/snapshots/restore", v1.NasController().RestoreFromSnapshot)
-	httpRg.DELETE("api/v1/nas/pools/:pool/datasets/:dataset/snapshots", v1.NasController().DeleteSnapshot)
+	httpRg.DELETE("api/v1/nas/pools/:pool/datasets/:dataset/snapshots/:snapshotName", v1.NasController().DeleteSnapshot)
 
 	httpRg.GET("api/v1/metrics/system", v1.MetricsController().GetSystemMetrics)
 }

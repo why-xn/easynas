@@ -10,6 +10,7 @@ import (
 
 // FileInfo holds the path and size of a file or folder
 type FileInfo struct {
+	Name string
 	Path string
 	Size int64 // Size is 0 for directories
 }
@@ -38,9 +39,9 @@ func ListAndSortFilesFolders(path string) ([]FileInfo, error) {
 
 		// Collect file/folder info
 		if info.IsDir() {
-			folders = append(folders, FileInfo{Path: fullPath, Size: 0})
+			folders = append(folders, FileInfo{Name: info.Name(), Path: fullPath, Size: 0})
 		} else {
-			files = append(files, FileInfo{Path: fullPath, Size: info.Size()})
+			files = append(files, FileInfo{Name: info.Name(), Path: fullPath, Size: info.Size()})
 		}
 		return nil
 	})

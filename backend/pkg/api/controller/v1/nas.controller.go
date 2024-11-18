@@ -39,7 +39,7 @@ type NasControllerInterface interface {
 	UploadFileToDataset(ctx *gin.Context)
 	DeleteFileFromDataset(ctx *gin.Context)
 	CreateSnapshot(ctx *gin.Context)
-	ListSnapshot(ctx *gin.Context)
+	GetSnapshotList(ctx *gin.Context)
 	RestoreFromSnapshot(ctx *gin.Context)
 	DeleteSnapshot(ctx *gin.Context)
 }
@@ -147,6 +147,11 @@ func (ctrl *nasController) GetDataset(ctx *gin.Context) {
 		return
 	}
 
+	nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"dataset": dsName})
+	if nfsShare != nil {
+		dataset.ShareEnabled = nfsShare.ShareOn
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data":   dataset,
@@ -183,8 +188,8 @@ func (ctrl *nasController) GetDatasetList(ctx *gin.Context) {
 	var filteredDatasets []nas.ZFSDataset
 	for _, ds := range datasets {
 		if strings.HasPrefix(ds.Name, fmt.Sprintf("%s/", DefaultPool)) {
-			if _, exists := nfsShareMap[ds.Name]; exists {
-				ds.ShareEnabled = true
+			if share, exists := nfsShareMap[ds.Name]; exists {
+				ds.ShareEnabled = share.ShareOn
 			}
 			filteredDatasets = append(filteredDatasets, ds)
 		}
@@ -381,14 +386,24 @@ func (ctrl *nasController) CreateNfsShare(ctx *gin.Context) {
 		return
 	}
 
-	nfsShare := model.NfsShare{
-		Pool:    input.Pool,
-		Dataset: input.DatasetName,
-	}
-	if err = db.GetDb().Insert(&nfsShare); err != nil {
-		log.Logger.Fatalw("Failed to insert nfs share record in db", "err", err.Error())
-		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
-		return
+	nfsShare, _ := db.Get[model.NfsShare](db.GetDb(), map[string]interface{}{"dataset": input.DatasetName})
+	if nfsShare == nil {
+		nfsShare := model.NfsShare{
+			Pool:    input.Pool,
+			Dataset: input.DatasetName,
+			ShareOn: true,
+		}
+		if err = db.GetDb().Insert(&nfsShare); err != nil {
+			log.Logger.Fatalw("Failed to insert nfs share record in db", "err", err.Error())
+			returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+			return
+		}
+	} else {
+		if err = db.GetDb().Update(nfsShare, map[string]interface{}{"share_on": true}); err != nil {
+			log.Logger.Errorw("Failed to update nfs share in db", "err", err.Error())
+			returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
@@ -445,12 +460,8 @@ func (ctrl *nasController) DeleteNfsShare(ctx *gin.Context) {
 		return
 	}
 
-	if err := db.GetDb().Delete(&model.NfsShare{}, map[string]interface{}{"pool": input.Pool, "dataset": input.DatasetName}); err != nil {
-		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if err := db.GetDb().Delete(&model.NfsSharePermission{}, map[string]interface{}{"nfs_share_id": 1}); err != nil {
+	if err = db.GetDb().Update(nfsShare, map[string]interface{}{"share_on": false}); err != nil {
+		log.Logger.Errorw("Failed to update nfs share in db", "err", err.Error())
 		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -535,7 +546,7 @@ func (ctrl *nasController) AddUserPermissionToNfsShare(ctx *gin.Context) {
 	}
 
 	// Recreate NFS Share with updated permission
-	err = nas.CreateNFSShare(input.DatasetName, rwPermissions, rwPermissions)
+	err = nas.CreateNFSShare(input.DatasetName, rwPermissions, rPermissions)
 	if err != nil {
 		log.Logger.Errorw("Failed to re-create nfs share with update permissions", "err", err)
 		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
@@ -603,7 +614,7 @@ func (ctrl *nasController) RemoveUserPermissionFromNfsShare(ctx *gin.Context) {
 	}
 
 	// Recreate NFS Share with updated permission
-	err = nas.CreateNFSShare(nfsSharePermission.NfsShare.Dataset, rwPermissions, rwPermissions)
+	err = nas.CreateNFSShare(nfsSharePermission.NfsShare.Dataset, rwPermissions, rPermissions)
 	if err != nil {
 		log.Logger.Errorw("Failed to re-create nfs share with update permissions", "err", err)
 		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
@@ -976,6 +987,13 @@ func (ctrl *nasController) DeleteSnapshot(ctx *gin.Context) {
 		return
 	}
 
+	snapshotName := ctx.Param("snapshotName")
+	snapshotName = util.Base64Decode(snapshotName)
+	if snapshotName == "" {
+		returnErrorResponse(ctx, "invalid snapshot name", http.StatusBadRequest)
+		return
+	}
+
 	dataset, err := findDataset(datasetName)
 	if err != nil {
 		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
@@ -987,21 +1005,7 @@ func (ctrl *nasController) DeleteSnapshot(ctx *gin.Context) {
 		return
 	}
 
-	var input dto.RestoreFromSnapshotInputDTO
-
-	err = ctx.BindJSON(&input)
-	if err != nil {
-		log.Logger.Errorw("Failed to bind JSON", "err", err)
-		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if input.SnapshotName == "" {
-		returnErrorResponse(ctx, "invalid snapshot name", http.StatusBadRequest)
-		return
-	}
-
-	err = nas.DeleteSnapshot(input.SnapshotName)
+	err = nas.DeleteSnapshot(snapshotName)
 	if err != nil {
 		log.Logger.Errorw("Failed to delete snapshot", "err", err)
 		returnErrorResponse(ctx, err.Error(), http.StatusBadRequest)

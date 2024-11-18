@@ -3,6 +3,7 @@ package nas
 import (
 	"bytes"
 	"fmt"
+	"github.com/whyxn/easynas/backend/pkg/log"
 	"github.com/whyxn/easynas/backend/pkg/util"
 	"os/exec"
 	"strings"
@@ -30,10 +31,10 @@ type ZFSDataset struct {
 
 // Snapshot represents the detailed information of a ZFS snapshot.
 type Snapshot struct {
-	Name       string
-	Used       string
-	Referenced string
-	Creation   string
+	Name       string `json:"name"`
+	Used       string `json:"used"`
+	Referenced string `json:"referenced"`
+	CreatedAt  string `json:"createdAt"`
 }
 
 // ListZPools lists all zpools on the system.
@@ -117,6 +118,8 @@ func CreateNFSShare(zfsDatasetName string, rwIPs []string, roIPs []string) error
 	roAccess := fmt.Sprintf("ro=%s", strings.Join(roIPs, ":"))
 	shareNfs := fmt.Sprintf("%s,%s,insecure", rwAccess, roAccess)
 
+	log.Logger.Infow("creating nfs share", "permission", shareNfs)
+
 	cmd := exec.Command("zfs", "set", fmt.Sprintf("sharenfs=%s", shareNfs), zfsDatasetName)
 
 	err := cmd.Run()
@@ -194,7 +197,7 @@ func ListSnapshots(dataset string) ([]Snapshot, error) {
 			Name:       fields[0],
 			Used:       fields[1],
 			Referenced: fields[2],
-			Creation:   strings.Join(fields[3:], " "), // Creation time can have spaces
+			CreatedAt:  strings.Join(fields[3:], " "), // Creation time can have spaces
 		})
 	}
 
@@ -228,9 +231,9 @@ func RestoreFromSnapshot(snapshotName string) error {
 func DeleteSnapshot(snapshotName string) error {
 	// Execute the zfs destroy command
 	cmd := exec.Command("zfs", "destroy", snapshotName)
-	err := cmd.Run()
+	output, err := cmd.CombinedOutput() // Capture both stdout and stderr
 	if err != nil {
-		return fmt.Errorf("failed to delete snapshot '%s': %w", snapshotName, err)
+		return fmt.Errorf("failed to delete snapshot '%s': %s (%w)", snapshotName, string(output), err)
 	}
 	return nil
 }

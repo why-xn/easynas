@@ -6,6 +6,7 @@ type NfsShare struct {
 	ID      uint   `json:"id" gorm:"primarykey"`
 	Pool    string `json:"pool"`
 	Dataset string `json:"dataset"`
+	ShareOn bool   `json:"shareOn"`
 }
 
 type NfsSharePermission struct {
