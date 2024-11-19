@@ -80,9 +80,6 @@ func (ctrl *userController) GetList(ctx *gin.Context) {
 	if requester == nil {
 		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
 		return
-	} else if !isAdmin(requester) {
-		returnErrorResponse(ctx, "permission denied", http.StatusUnauthorized)
-		return
 	}
 
 	userList, err := db.GetList[model.User](db.GetDb(), map[string]interface{}{})
@@ -103,9 +100,6 @@ func (ctrl *userController) Get(ctx *gin.Context) {
 	requester := context.GetRequesterFromContext(ctx)
 	if requester == nil {
 		returnErrorResponse(ctx, "unauthorized request", http.StatusUnauthorized)
-		return
-	} else if !isAdmin(requester) {
-		returnErrorResponse(ctx, "permission denied", http.StatusUnauthorized)
 		return
 	}
 
