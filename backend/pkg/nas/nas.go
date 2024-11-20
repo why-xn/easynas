@@ -145,10 +145,10 @@ func setPathPermissions(zfsPath string) error {
 	}
 
 	// Change permissions to 777
-	chmodCmd := exec.Command("sudo", "chmod", "-R", "777", zfsPath)
+	/*chmodCmd := exec.Command("sudo", "chmod", "-R", "777", zfsPath)
 	if err := chmodCmd.Run(); err != nil {
 		return fmt.Errorf("failed to set path permissions: %v", err)
-	}
+	}*/
 
 	return nil
 }
