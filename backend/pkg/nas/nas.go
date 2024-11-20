@@ -114,9 +114,16 @@ func UpdateQuota(volumeName, quota string) error {
 
 // CreateNFSShare creates an NFS share for a given ZFS volume.
 func CreateNFSShare(zfsDatasetName string, rwIPs []string, roIPs []string) error {
-	rwAccess := fmt.Sprintf("rw=%s", strings.Join(rwIPs, ":"))
-	roAccess := fmt.Sprintf("ro=%s", strings.Join(roIPs, ":"))
-	shareNfs := fmt.Sprintf("%s,%s,insecure", rwAccess, roAccess)
+	var rwAccess, roAccess string
+
+	if len(rwIPs) > 0 {
+		rwAccess = fmt.Sprintf(",rw=%s", strings.Join(rwIPs, ":"))
+	}
+	if len(roIPs) > 0 {
+		roAccess = fmt.Sprintf(",ro=%s", strings.Join(roIPs, ":"))
+	}
+
+	shareNfs := fmt.Sprintf("insecure%s%s", rwAccess, roAccess)
 
 	log.Logger.Infow("creating nfs share", "permission", shareNfs)
 

@@ -1,0 +1,13 @@
+[Unit]
+Description=easyNAS
+After=network.target
+
+[Service]
+ExecStart=/usr/local/easynas/bin/easynas
+Restart=always
+User=root
+Group=root
+WorkingDirectory=/usr/local/easynas/bin
+
+[Install]
+WantedBy=multi-user.target
